@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Матейчик кликер</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;
+    padding:18px;
+    background:radial-gradient(circle at 50% 15%, #2a2244 0%, #141020 45%, #0a0810 100%);
+    color:#e8e6f0;
+    font-family:'Press Start 2P','Courier New',monospace;
+    user-select:none;-webkit-user-select:none;
+    -webkit-tap-highlight-color:transparent;
+    touch-action:manipulation;
+    overflow:hidden;
+  }
+  h1{
+    margin:0;
+    font-size:clamp(14px,3.4vmin,26px);
+    letter-spacing:2px;
+    color:#ffd75e;
+    text-shadow:3px 3px 0 #7a2d8f, 6px 6px 0 #2b1240, 0 0 24px rgba(255,215,94,.35);
+    text-align:center;
+    line-height:1.4;
+  }
+  .hud{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+  .card{
+    min-width:92px;padding:8px 10px;text-align:center;
+    background:#1a1530;border:3px solid #3d3268;
+    box-shadow:0 4px 0 #0b0814;
+  }
+  .card .lbl{display:block;font-size:7px;color:#8f86c4;margin-bottom:6px;letter-spacing:1px}
+  .card span:last-child{font-size:clamp(11px,2.4vmin,16px);color:#fff}
+  #combo{color:#7cf0a1}
+  #best{color:#ff9de2}
+
+  .stage{
+    position:relative;padding:10px;
+    background:#171227;border:4px solid #3d3268;
+    box-shadow:0 0 0 4px #0a0812, 0 14px 40px rgba(0,0,0,.65);
+  }
+  canvas{
+    display:block;
+    width:min(70vmin,420px);height:auto;
+    image-rendering:pixelated;
+    image-rendering:crisp-edges;
+    cursor:crosshair;
+    background:#100c1c;
+  }
+  .hint{
+    position:absolute;left:0;right:0;bottom:14px;text-align:center;
+    font-size:7px;color:#6a608f;pointer-events:none;
+  }
+  .bubble{
+    position:absolute;transform:translate(-50%,-100%);
+    background:#fff;color:#14101f;border:3px solid #14101f;
+    padding:6px 8px;font-size:clamp(7px,1.6vmin,11px);line-height:1.5;
+    white-space:nowrap;pointer-events:none;
+    animation:pop .85s ease-out forwards;
+    z-index:5;
+  }
+  .bubble::after{
+    content:"";position:absolute;left:50%;bottom:-9px;margin-left:-5px;
+    width:0;height:0;border:5px solid transparent;border-top-color:#14101f;
+  }
+  @keyframes pop{
+    0%{opacity:0;transform:translate(-50%,-100%) scale(.4) rotate(-6deg)}
+    18%{opacity:1;transform:translate(-50%,-100%) scale(1.08) rotate(2deg)}
+    35%{transform:translate(-50%,-100%) scale(1) rotate(0)}
+    100%{opacity:0;transform:translate(-50%,-160%) scale(.95)}
+  }
+  .float{
+    position:absolute;pointer-events:none;z-index:6;
+    font-size:clamp(8px,1.8vmin,13px);color:#ffd75e;
+    text-shadow:2px 2px 0 #3a1d00;
+    animation:floatUp .7s ease-out forwards;
+  }
+  @keyframes floatUp{
+    0%{opacity:1;transform:translate(-50%,-50%) scale(1)}
+    100%{opacity:0;transform:translate(-50%,-220%) scale(1.4)}
+  }
+  .controls{display:flex;gap:10px}
+  button{
+    font-family:inherit;font-size:8px;letter-spacing:1px;
+    padding:10px 14px;cursor:pointer;
+    background:#2a2150;color:#e8e6f0;
+    border:3px solid #4b3d85;box-shadow:0 4px 0 #0b0814;
+    transition:transform .06s, background .15s;
+  }
+  button:hover{background:#372a68}
+  button:active{transform:translateY(3px);box-shadow:0 1px 0 #0b0814}
+  .tip{margin:0;font-size:7px;color:#6a608f;text-align:center;line-height:1.8}
+</style>
+</head>
+<body>
+
+<h1>МАТЕЙЧИК КЛИКЕР</h1>
+
+<div class="hud">
+  <div class="card"><span class="lbl">КЛИКОВ</span><span id="score">0</span></div>
+  <div class="card"><span class="lbl">КОМБО</span><span id="combo">x1</span></div>
+  <div class="card"><span class="lbl">РЕКОРД</span><span id="best">0</span></div>
+</div>
+
+<div class="stage" id="stage">
+  <canvas id="game"></canvas>
+  <div class="hint">тыкай по лысому мужику</div>
+</div>
+
+<div class="controls">
+  <button id="sound">ЗВУК: ВКЛ</button>
+  <button id="reset">СБРОС</button>
+</div>
+
+<p class="tip">клик = крик • кликай быстро — растёт множитель</p>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------- canvas ---------- */
+  var RES = 64;
+  var cv = document.getElementById('game');
+  cv.width = RES; cv.height = RES;
+  var ctx = cv.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+
+  var stage = document.getElementById('stage');
+  var scoreEl = document.getElementById('score');
+  var comboEl = document.getElementById('combo');
+  var bestEl  = document.getElementById('best');
+  var soundBtn = document.getElementById('sound');
+  var resetBtn = document.getElementById('reset');
+
+  var SKIN   = '#f2c69b';
+  var SKIN_D = '#d3a077';
+  var SKIN_L = '#ffdcbd';
+  var LINE   = '#2e2119';
+  var SHIRT  = '#3d6ea8';
+  var SHIRT_D= '#2f557f';
+
+  var state = {
+    clicks: 0,
+    combo: 0,
+    mult: 1,
+    lastClick: -99999,
+    shake: 0,
+    mouth: 0,
+    squint: 0,
+    armUp: 0,
+    blinkT: 0,
+    nextBlink: 1200,
+    muted: false,
+    best: parseInt(localStorage.getItem('matey_best') || '0', 10) || 0
+  };
+
+  /* ---------- pixel helpers ---------- */
+  function px(x, y, w, h, c){
+    ctx.fillStyle = c;
+    ctx.fillRect(x | 0, y | 0, w | 0, h | 0);
+  }
+  function disc(cx, cy, r, c){
+    ctx.fillStyle = c;
+    var rr = r * r;
+    for (var y = -r; y <= r; y++){
+      var w = Math.floor(Math.sqrt(Math.max(0, rr - y * y)));
+      ctx.fillRect((cx - w) | 0, (cy + y) | 0, w * 2 + 1, 1);
+    }
+  }
+  function pixLine(x0, y0, x1, y1, th, c){
+    var steps = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0), 1);
+    var half = th / 2;
+    ctx.fillStyle = c;
+    for (var i = 0; i <= steps; i++){
+      var x = Math.round(x0 + (x1 - x0) * i / steps);
+      var y = Math.round(y0 + (y1 - y0) * i / steps);
+      ctx.fillRect(Math.round(x - half), Math.round(y - half), th, th);
+    }
+  }
+
+  /* ---------- drawing the man ---------- */
+  function drawMan(now){
+    ctx.clearRect(0, 0, RES, RES);
+
+    var wob = Math.sin(now / 55) * state.shake;
+    var bob = Math.cos(now / 70) * state.shake * 0.4;
+    ctx.save();
+    ctx.translate(Math.round(wob), Math.round(bob));
+
+    var up = state.armUp;
+
+    /* arms (behind body) */
+    var lhx = 13 + (11 - 13) * up, lhy = 61 + (36 - 61) * up;
+    var rhx = 51 + (53 - 51) * up, rhy = 61 + (36 - 61) * up;
+    pixLine(21, 50, lhx, lhy, 5, SKIN);
+    pixLine(43, 50, rhx, rhy, 5, SKIN);
+    px(lhx - 3, lhy - 3, 6, 6, SKIN_L);
+    px(rhx - 3, rhy - 3, 6, 6, SKIN_L);
+
+    /* torso */
+    px(19, 47, 26, 13, SHIRT);
+    px(21, 45, 22, 2, SHIRT);
+    px(19, 56, 26, 4, SHIRT_D);
+    px(19, 47, 3, 12, SHIRT_D);
+    px(42, 47, 3, 12, SHIRT_D);
+    px(20, 47, 3, 6, '#4b80bd');
+    px(27, 47, 10, 2, '#22405f');
+
+    /* neck */
+    px(27, 39, 10, 8, SKIN_D);
+
+    /* ears */
+    px(14, 26, 3, 7, SKIN_D);
+    px(48, 26, 3, 7, SKIN_D);
+    px(15, 28, 1, 3, '#b98d68');
+    px(49, 28, 1, 3, '#b98d68');
+
+    /* head */
+    disc(32, 27, 16, LINE);
+    disc(32, 27, 15, SKIN_D);
+    disc(32, 26, 14, SKIN);
+    disc(25, 19, 4, SKIN_L);
+    px(22, 17, 4, 2, SKIN_L);
+
+    /* blush */
+    if (state.clicks > 40){
+      px(21, 31, 4, 2, '#e08a8a');
+      px(39, 31, 4, 2, '#e08a8a');
+    }
+
+    /* brows */
+    var browY = 22 - Math.round(2 * state.squint);
+    px(23, browY, 7, 2, LINE);
+    px(34, browY, 7, 2, LINE);
+
+    /* eyes */
+    var blinking = state.blinkT > 0;
+    if (blinking){
+      px(24, 27, 6, 2, LINE);
+      px(34, 27, 6, 2, LINE);
+    } else {
+      px(24, 25, 6, 4, '#ffffff');
+      px(34, 25, 6, 4, '#ffffff');
+      px(26, 26, 3, 3, '#20160f');
+      px(36, 26, 3, 3, '#20160f');
+      var sq = Math.round(2 * state.squint);
+      if (sq > 0){
+        px(24, 29 - sq, 6, sq, SKIN);
+        px(34, 29 - sq, 6, sq, SKIN);
+      }
+    }
+
+    /* tears */
+    if (state.clicks > 120){
+      var t = (now / 90) % 6;
+      px(26, 30 + Math.round(t), 2, 3, '#7fd4ff');
+      px(36, 30 + Math.round((t + 3) % 6), 2, 3, '#7fd4ff');
+    }
+
+    /* nose */
+    px(31, 30, 3, 3, SKIN_D);
+    px(30, 32, 5, 1, '#c99468');
+
+    /* mouth */
+    var m = state.mouth;
+    if (m < 0.06){
+      px(28, 36, 8, 2, '#6b2222');
+      px(28, 39, 8, 1, SKIN_D);
+    } else {
+      var h = Math.max(2, Math.round(1 + m * 7));
+      px(27, 35, 10, h, '#5c1414');
+      if (h >= 3) px(27, 35, 10, 2, '#fff3e0');
+      if (h >= 5) px(29, 35 + h - 3, 6, 3, '#c05060');
+    }
+
+    /* sweat */
+    if (state.squint > 0.3){
+      px(46, 20, 2, 3, '#7fd4ff');
+    }
+
+    ctx.restore();
+  }
+
+  /* ---------- audio ---------- */
+  var actx = null, master = null, noiseBuf = null;
+
+  function ensureAudio(){
+    if (!actx){
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      actx = new AC();
+      master = actx.createGain();
+      master.gain.value = 0.5;
+      master.connect(actx.destination);
+    }
+    if (actx.state === 'suspended') actx.resume();
+    return actx;
+  }
+
+  function getNoise(){
+    if (noiseBuf) return noiseBuf;
+    var len = Math.floor(actx.sampleRate * 0.6);
+    noiseBuf = actx.createBuffer(1, len, actx.sampleRate);
+    var d = noiseBuf.getChannelData(0);
+    for (var i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    return noiseBuf;
+  }
+
+  function scream(power){
+    if (state.muted) return;
+    if (!ensureAudio()) return;
+
+    var t = actx.currentTime + 0.001;
+    var dur = 0.30 + Math.random() * 0.28;
+    var f0 = 140 + Math.random() * 80 + Math.min(120, power * 8);
+
+    /* voice */
+    var osc = actx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(f0 * 1.55, t);
+    osc.frequency.exponentialRampToValueAtTime(f0 * 0.8, t + dur);
+
+    var lfo = actx.createOscillator();
+    lfo.type = 'sine';
+    lfo.frequency.value = 16 + Math.random() * 16;
+    var lfoGain = actx.createGain();
+    lfoGain.gain.value = f0 * 0.09;
+    lfo.connect(lfoGain);
+    lfoGain.connect(osc.frequency);
+
+    /* formants for "ААА" */
+    var f1 = actx.createBiquadFilter();
+    f1.type = 'bandpass'; f1.frequency.value = 780;  f1.Q.value = 5;
+    var f2 = actx.createBiquadFilter();
+    f2.type = 'bandpass'; f2.frequency.value = 1250; f2.Q.value = 7;
+    var f3 = actx.createBiquadFilter();
+    f3.type = 'bandpass'; f3.frequency.value = 2500; f3.Q.value = 9;
+
+    var env = actx.createGain();
+    env.gain.setValueAtTime(0.0001, t);
+    env.gain.linearRampToValueAtTime(0.30, t + 0.025);
+    env.gain.exponentialRampToValueAtTime(0.0008, t + dur);
+
+    osc.connect(f1); osc.connect(f2); osc.connect(f3);
+    f1.connect(env); f2.connect(env); f3.connect(env);
+
+    /* rasp */
+    var noise = actx.createBufferSource();
+    noise.buffer = getNoise();
+    var nf = actx.createBiquadFilter();
+    nf.type = 'bandpass';
+    nf.frequency.setValueAtTime(1800, t);
+    nf.frequency.exponentialRampToValueAtTime(900, t + dur);
+    nf.Q.value = 1.2;
+    var ng = actx.createGain();
+    ng.gain.value = 0.12;
+    noise.connect(nf); nf.connect(ng); ng.connect(env);
+
+    env.connect(master);
+
+    osc.start(t); osc.stop(t + dur + 0.05);
+    lfo.start(t); lfo.stop(t + dur + 0.05);
+    noise.start(t); noise.stop(t + dur + 0.05);
+  }
+
+  /* ---------- fx ---------- */
+  var PHRASES = [
+    'А-А-А-А!', 'АЙ!', 'ОЙ-ОЙ-ОЙ!', 'НЕ НАДО!', 'ХВАТИТ!',
+    'МАТЕЙ, ПРЕКРАТИ!', 'ЗА ЧТО?!', 'БОЛЬНО ЖЕ!', 'Ы-Ы-Ы!',
+    'ПОЩАДИ!', 'МАМА!', 'Я ЖЕ ЛЫСЫЙ!', 'ПЕРЕСТАНЬ!', 'У-У-У!',
+    'ТЫ ЧТО ДЕЛАЕШЬ?!', 'НЕ ТЫКАЙ В ГОЛОВУ!', 'СПАСИТЕ!',
+    'ЕЩЁ РАЗ — И Я ЗАПЛАЧУ!', 'ААААА!'
+  ];
+
+  function spawnBubble(){
+    var b = document.createElement('div');
+    b.className = 'bubble';
+    b.textContent = PHRASES[(Math.random() * PHRASES.length) | 0];
+    var r = stage.getBoundingClientRect();
+    var x = r.width * (0.25 + Math.random() * 0.5);
+    var y = r.height * (0.18 + Math.random() * 0.18);
+    b.style.left = x + 'px';
+    b.style.top = y + 'px';
+    stage.appendChild(b);
+    b.addEventListener('animationend', function(){ b.remove(); });
+  }
+
+  function spawnFloat(x, y, text){
+    var f = document.createElement('div');
+    f.className = 'float';
+    f.textContent = text;
+    f.style.left = x + 'px';
+    f.style.top = y + 'px';
+    stage.appendChild(f);
+    f.addEventListener('animationend', function(){ f.remove(); });
+  }
+
+  /* ---------- hud ---------- */
+  function updateHud(){
+    scoreEl.textContent = state.clicks;
+    comboEl.textContent = 'x' + state.mult;
+    bestEl.textContent = state.best;
+  }
+
+  /* ---------- click ---------- */
+  function hit(clientX, clientY){
+    var now = performance.now();
+
+    state.combo = (now - state.lastClick < 700) ? state.combo + 1 : 1;
+    state.lastClick = now;
+    state.mult = 1 + Math.min(9, Math.floor(state.combo / 8));
+
+    state.clicks += state.mult;
+    if (state.clicks > state.best){
+      state.best = state.clicks;
+      try { localStorage.setItem('matey_best', String(state.best)); } catch (e) {}
+    }
+
+    state.mouth = 1;
+    state.squint = 1;
+    state.armUp = 1;
+    state.shake = 3 + state.mult * 0.7;
+
+    scream(state.mult);
+
+    var r = stage.getBoundingClientRect();
+    var fx = clientX - r.left, fy = clientY - r.top;
+    spawnFloat(fx, fy, '+' + state.mult);
+    spawnBubble();
+
+    updateHud();
+  }
+
+  stage.addEventListener('pointerdown', function(e){
+    e.preventDefault();
+    hit(e.clientX, e.clientY);
+  });
+  stage.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+
+  window.addEventListener('keydown', function(e){
+    if (e.code === 'Space' || e.code === 'Enter'){
+      e.preventDefault();
+      var r = stage.getBoundingClientRect();
+      hit(r.left + r.width / 2, r.top + r.height * 0.35);
+    }
+  });
+
+  soundBtn.addEventListener('click', function(){
+    state.muted = !state.muted;
+    soundBtn.textContent = 'ЗВУК: ' + (state.muted ? 'ВЫКЛ' : 'ВКЛ');
+    if (!state.muted) ensureAudio();
+  });
+
+  resetBtn.addEventListener('click', function(){
+    state.clicks = 0;
+    state.combo = 0;
+    state.mult = 1;
+    state.lastClick = -99999;
+    updateHud();
+  });
+
+  /* ---------- loop ---------- */
+  var prev = performance.now();
+
+  function loop(now){
+    var dt = Math.min(60, now - prev);
+    prev = now;
+
+    state.shake  *= Math.pow(0.86, dt / 16.7);
+    state.mouth   = Math.max(0, state.mouth  - dt / 380);
+    state.squint  = Math.max(0, state.squint - dt / 450);
+    state.armUp   = Math.max(0, state.armUp  - dt / 500);
+
+    if (state.blinkT > 0){
+      state.blinkT -= dt;
+    } else {
+      state.nextBlink -= dt;
+      if (state.nextBlink <= 0){
+        state.blinkT = 110;
+        state.nextBlink = 1500 + Math.random() * 3000;
+      }
+    }
+
+    /* комбо гаснет, если долго не кликали */
+    if (now - state.lastClick > 900 && state.mult > 1){
+      state.mult = 1;
+      state.combo = 0;
+      comboEl.textContent = 'x1';
+    }
+
+    drawMan(now);
+    requestAnimationFrame(loop);
+  }
+
+  updateHud();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
